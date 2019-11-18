@@ -294,5 +294,85 @@ void main() {
       await doc1.delete();
       await doc2.delete();
     });
+
+    test('FieldPath.documentId', () async {
+      // Populate the database with two test documents.
+      final CollectionReference messages = firestore.collection('messages');
+
+      // Use document ID as a unique identifier to ensure that we don't
+      // collide with other tests running against this database.
+      final DocumentReference doc = messages.document();
+      final String documentId = doc.documentID;
+
+      await doc.setData(<String, dynamic>{
+        'message': 'testing field path',
+        'created_at': FieldValue.serverTimestamp(),
+      });
+
+      // This tests the native implementations of the where and
+      // orderBy methods handling FieldPath.documentId.
+      // There is also an error thrown when ordering by document id
+      // natively, however, that is also covered by assertion
+      // on the Dart side, which is tested with a unit test.
+      final QuerySnapshot querySnapshot = await messages
+          .orderBy(FieldPath.documentId)
+          .where(FieldPath.documentId, isEqualTo: documentId)
+          .getDocuments();
+
+      await doc.delete();
+
+      final List<DocumentSnapshot> results = querySnapshot.documents;
+      final DocumentSnapshot result = results[0];
+
+      expect(results.length, 1);
+      expect(result.data['message'], 'testing field path');
+      expect(result.documentID, documentId);
+    });
+
+    test('Query.whereIn', () async {
+      final CollectionReference ref = firestore.collection('cities');
+      await ref.document('la').setData(<String, dynamic>{
+        'country': 'USA',
+      });
+      await ref.document('tokyo').setData(<String, dynamic>{
+        'country': 'Japan',
+      });
+      await ref.document('maputo').setData(<String, dynamic>{
+        'country': 'Mozambique',
+      });
+      QuerySnapshot snapshot = await ref
+          .where('country', whereIn: ['USA', 'Mozambique'])
+          .orderBy('country')
+          .getDocuments();
+      final List<DocumentSnapshot> results = snapshot.documents;
+      expect(results.length, 2);
+      final DocumentSnapshot snapshot1 = results[0];
+      final DocumentSnapshot snapshot2 = results[1];
+      expect(snapshot1.documentID, 'maputo');
+      expect(snapshot2.documentID, 'la');
+    });
+
+    test('Query.whereArrayContainsAny', () async {
+      final CollectionReference ref = firestore.collection('cities');
+      await ref.document('la').setData(<String, dynamic>{
+        'country': 'USA',
+        'regions': ['west-coast', 'east-coast'],
+      });
+      await ref.document('tokyo').setData(<String, dynamic>{
+        'country': 'Japan',
+        'regions': ['kanto', 'honshu'],
+      });
+      QuerySnapshot snapshot = await ref
+          .where('regions', arrayContainsAny: ['kanto', 'west-coast'])
+          .orderBy('country')
+          .getDocuments();
+      final List<DocumentSnapshot> results = snapshot.documents;
+      expect(results.length, 2);
+      final DocumentSnapshot snapshot1 = results[0];
+      final DocumentSnapshot snapshot2 = results[1];
+      expect(snapshot1.documentID, 'moz');
+      expect(snapshot2.documentID, 'usa');
+    });
+
   });
 }

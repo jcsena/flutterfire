@@ -394,6 +394,72 @@ void main() {
           ]),
         );
       });
+      test('where in', () async {
+        final StreamSubscription<QuerySnapshot> subscription =
+        collectionReference
+            .where('country', whereIn: ['USA', 'Japan'])
+            .snapshots()
+            .listen((QuerySnapshot querySnapshot) {});
+        subscription.cancel();
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          log,
+          equals(<Matcher>[
+            isMethodCall(
+              'Query#addSnapshotListener',
+              arguments: <String, dynamic>{
+                'app': app.name,
+                'path': 'foo',
+                'isCollectionGroup': false,
+                'parameters': <String, dynamic>{
+                  'where': <List<dynamic>>[
+                    <dynamic>['country', 'in', ['USA', 'Japan']],
+                  ],
+                  'orderBy': <List<dynamic>>[],
+                },
+                'includeMetadataChanges': false,
+              },
+            ),
+            isMethodCall(
+              'removeListener',
+              arguments: <String, dynamic>{'handle': 0},
+            ),
+          ]),
+        );
+      });
+      test('where array-contains-any', () async {
+        final StreamSubscription<QuerySnapshot> subscription =
+        collectionReference
+            .where('regions', arrayContainsAny: ['west-coast', 'east-coast'])
+            .snapshots()
+            .listen((QuerySnapshot querySnapshot) {});
+        subscription.cancel();
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          log,
+          equals(<Matcher>[
+            isMethodCall(
+              'Query#addSnapshotListener',
+              arguments: <String, dynamic>{
+                'app': app.name,
+                'path': 'foo',
+                'isCollectionGroup': false,
+                'parameters': <String, dynamic>{
+                  'where': <List<dynamic>>[
+                    <dynamic>['regions', 'array-contains-any', ['west-coast', 'east-coast']],
+                  ],
+                  'orderBy': <List<dynamic>>[],
+                },
+                'includeMetadataChanges': false,
+              },
+            ),
+            isMethodCall(
+              'removeListener',
+              arguments: <String, dynamic>{'handle': 0},
+            ),
+          ]),
+        );
+      });
       test('where field isNull', () async {
         final StreamSubscription<QuerySnapshot> subscription =
             collectionReference
@@ -968,6 +1034,80 @@ void main() {
           ),
         );
       });
+
+      test('FieldPath', () async {
+        await collectionReference
+            .where(FieldPath.documentId, isEqualTo: 'bar')
+            .getDocuments();
+        expect(
+          log,
+          equals(<Matcher>[
+            isMethodCall(
+              'Query#getDocuments',
+              arguments: <String, dynamic>{
+                'app': app.name,
+                'path': 'foo',
+                'isCollectionGroup': false,
+                'parameters': <String, dynamic>{
+                  'where': <List<dynamic>>[
+                    <dynamic>[FieldPath.documentId, '==', 'bar'],
+                  ],
+                  'orderBy': <List<dynamic>>[],
+                },
+                'source': 'default',
+              },
+            ),
+          ]),
+        );
+      });
+      test('orderBy assertions', () async {
+        // Can only order by the same field once.
+        expect(() {
+          firestore.collection('foo').orderBy('bar').orderBy('bar');
+        }, throwsAssertionError);
+        // Cannot order by unsupported types.
+        expect(() {
+          firestore.collection('foo').orderBy(0);
+        }, throwsAssertionError);
+        // Parameters cannot be null.
+        expect(() {
+          firestore.collection('foo').orderBy(null);
+        }, throwsAssertionError);
+        expect(() {
+          firestore.collection('foo').orderBy('bar', descending: null);
+        }, throwsAssertionError);
+
+        // Cannot order by document id when paginating with documents.
+        final DocumentReference documentReference =
+            firestore.document('foo/bar');
+        final DocumentSnapshot snapshot = await documentReference.get();
+        expect(() {
+          firestore
+              .collection('foo')
+              .startAfterDocument(snapshot)
+              .orderBy(FieldPath.documentId);
+        }, throwsAssertionError);
+      });
+      test('document pagination FieldPath assertions', () async {
+        final DocumentReference documentReference =
+            firestore.document('foo/bar');
+        final DocumentSnapshot snapshot = await documentReference.get();
+        final Query query =
+            firestore.collection('foo').orderBy(FieldPath.documentId);
+
+        expect(() {
+          query.startAfterDocument(snapshot);
+        }, throwsAssertionError);
+        expect(() {
+          query.startAtDocument(snapshot);
+        }, throwsAssertionError);
+        expect(() {
+          query.endAtDocument(snapshot);
+        }, throwsAssertionError);
+        expect(() {
+          query.endBeforeDocument(snapshot);
+        }, throwsAssertionError);
+      });
     });
 
     group('FirestoreMessageCodec', () {
@@ -1003,6 +1143,10 @@ void main() {
         _checkEncodeDecode<dynamic>(codec, FieldValue.serverTimestamp());
         _checkEncodeDecode<dynamic>(codec, FieldValue.increment(1.0));
         _checkEncodeDecode<dynamic>(codec, FieldValue.increment(1));
+      });
+
+      test('encode and decode FieldPath', () {
+        _checkEncodeDecode<dynamic>(codec, FieldPath.documentId);
       });
     });
 
@@ -1234,6 +1378,8 @@ bool _deepEquals(dynamic valueA, dynamic valueB) {
   if (valueA is FieldValue) {
     return valueB is FieldValue && _deepEqualsFieldValue(valueA, valueB);
   }
+  if (valueA is FieldPath)
+    return valueB is FieldPath && valueA.type == valueB.type;
   return valueA == valueB;
 }
 
